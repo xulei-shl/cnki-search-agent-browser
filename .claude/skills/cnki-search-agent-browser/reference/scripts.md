@@ -30,10 +30,11 @@ cnki-search.sh <keyword> [count] [output_dir]
 **使用示例**：
 ```bash
 # 使用默认参数（50篇，输出到 outputs）
-bash scripts/cnki-search.sh "人工智能"
+cd {baseDir}/.claude/skills/cnki-search-agent-browser
+bash scripts/cnki-search.sh "人工智能" 50 {baseDir}/outputs
 
 # 自定义数量和输出目录
-bash scripts/cnki-search.sh "人工智能" 100 my_outputs
+bash scripts/cnki-search.sh "人工智能" 100 {baseDir}/my_outputs
 ```
 
 ---
@@ -64,16 +65,17 @@ cnki-adv-search.sh <keyword> [options]
 **使用示例**：
 ```bash
 # 使用默认参数（最近3年，核心期刊，50篇）
-bash scripts/cnki-adv-search.sh "人工智能"
+cd {baseDir}/.claude/skills/cnki-search-agent-browser
+bash scripts/cnki-adv-search.sh "人工智能" -n 50 -o {baseDir}/outputs
 
 # 自定义时间范围
-bash scripts/cnki-adv-search.sh "人工智能" -s 2020 -e 2024
+bash scripts/cnki-adv-search.sh "人工智能" -s 2020 -e 2024 -o {baseDir}/outputs
 
 # 不限制核心期刊
-bash scripts/cnki-adv-search.sh "人工智能" --no-core
+bash scripts/cnki-adv-search.sh "人工智能" --no-core -o {baseDir}/outputs
 
 # 完整自定义
-bash scripts/cnki-adv-search.sh "人工智能" -s 2019 -e 2023 -c -n 100 -o results
+bash scripts/cnki-adv-search.sh "人工智能" -s 2019 -e 2023 -c -n 100 -o {baseDir}/results
 ```
 
 ---
@@ -123,13 +125,15 @@ cnki-crawl.sh <session> <output_dir> <keyword> --target-page <页码> --skip-in-
 
 **Skill 层参数计算示例**：
 ```bash
-# 1. 读取状态文件获取所有必要信息
-STATE=$(cat outputs/.cnki_state.json)
-EXISTING_COUNT=$(echo "$STATE" | jq -r '.total_collected')  # 10
-CURRENT_PAGE=$(echo "$STATE" | jq -r '.current_page')       # 1
-ITEMS_PER_PAGE=$(echo "$STATE" | jq -r '.items_per_page')   # 20
+# 1. 使用 Bash 工具读取状态文件
+Bash cat {baseDir}/outputs/.cnki_state.json
 
-# 2. 计算目标参数
+# 2. 从输出中提取并计算
+EXISTING_COUNT=10   # 从 .total_collected 获取
+CURRENT_PAGE=1      # 从 .current_page 获取
+ITEMS_PER_PAGE=20   # 从 .items_per_page 获取
+
+# 3. 计算目标参数
 TARGET_PAGE=$((EXISTING_COUNT / ITEMS_PER_PAGE + 1))        # 10/20+1 = 1
 SKIP_IN_PAGE=$((EXISTING_COUNT % ITEMS_PER_PAGE))          # 10%20 = 10
 START_IDX=$((EXISTING_COUNT + 1))                           # 11
@@ -139,7 +143,8 @@ START_IDX=$((EXISTING_COUNT + 1))                           # 11
 ```bash
 # 已爬取10篇，每页20条，继续爬30篇
 # Skill 计算: target_page=1, skip_in_page=10, start_idx=11
-bash scripts/cnki-crawl.sh cnki outputs "关键词" \
+cd {baseDir}/.claude/skills/cnki-search-agent-browser
+bash scripts/cnki-crawl.sh cnki {baseDir}/outputs "关键词" \
   --target-page 1 \
   --skip-in-page 10 \
   --count 30 \
@@ -147,14 +152,14 @@ bash scripts/cnki-crawl.sh cnki outputs "关键词" \
 
 # 已爬取50篇，每页50条，继续爬50篇
 # Skill 计算: target_page=2, skip_in_page=0, start_idx=51
-bash scripts/cnki-crawl.sh cnki outputs "关键词" \
+bash scripts/cnki-crawl.sh cnki {baseDir}/outputs "关键词" \
   --target-page 2 \
   --skip-in-page 0 \
   --count 50 \
   --start-idx 51
 
 # 从当前页继续爬取（不指定目标页）
-bash scripts/cnki-crawl.sh cnki outputs "关键词" --count 30 --start-idx 11
+bash scripts/cnki-crawl.sh cnki {baseDir}/outputs "关键词" --count 30 --start-idx 11
 ```
 
 **注意事项**：

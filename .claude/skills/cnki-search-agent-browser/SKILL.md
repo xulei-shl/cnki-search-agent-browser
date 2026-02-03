@@ -136,6 +136,12 @@ flowchart TD
 | 简单检索 | `cnki-search.sh` | `cnki-search.sh <keyword> [count] [output_dir]` |
 | 高级检索 | `cnki-adv-search.sh` | `cnki-adv-search.sh <keyword> [-s start] [-e end] [-c] [-n count]` |
 
+**完整调用示例**（需 cd 到脚本目录）：
+```bash
+cd {baseDir}/.claude/skills/cnki-search-agent-browser
+bash scripts/cnki-search.sh "关键词" 15 {baseDir}/outputs
+```
+
 **完成后展示结果摘要**，
 
 ```
@@ -158,7 +164,11 @@ flowchart TD
 - **Skill 层（大模型）**：理解用户意图、读取状态文件、计算目标参数
 - **脚本层（执行）**：跳转到指定页、跳过指定条数、提取数据、输出状态
 
-**状态文件格式** (`outputs/.cnki_state.json`)：
+**状态文件位置说明**：
+- 状态文件位于 `{baseDir}/outputs/.cnki_state.json`（项目根目录的 outputs/）
+- 使用 `Bash cat {baseDir}/outputs/.cnki_state.json` 读取
+
+**状态文件格式**：
 ```json
 {
   "keyword": "关键词",
@@ -171,16 +181,18 @@ flowchart TD
 
 **参数计算逻辑**（从状态文件读取）：
 ```bash
-# 1. 读取状态文件获取所有必要信息
-STATE=$(cat outputs/.cnki_state.json)
-EXISTING_COUNT=$(echo "$STATE" | jq -r '.total_collected')  # 10
-CURRENT_PAGE=$(echo "$STATE" | jq -r '.current_page')       # 1
-ITEMS_PER_PAGE=$(echo "$STATE" | jq -r '.items_per_page')   # 20
+# 1. 使用 Bash 工具读取状态文件
+Bash cat {baseDir}/outputs/.cnki_state.json
 
-# 2. 计算目标页码和页内跳过数
-TARGET_PAGE=$((EXISTING_COUNT / ITEMS_PER_PAGE + 1))        # 10/20+1 = 1
-SKIP_IN_PAGE=$((EXISTING_COUNT % ITEMS_PER_PAGE))          # 10%20 = 10
-START_IDX=$((EXISTING_COUNT + 1))                           # 11
+# 2. 从输出中提取必要信息
+EXISTING_COUNT=10   # 从 .total_collected 获取
+CURRENT_PAGE=1      # 从 .current_page 获取
+ITEMS_PER_PAGE=20   # 从 .items_per_page 获取
+
+# 3. 计算目标页码和页内跳过数
+TARGET_PAGE=$((EXISTING_COUNT / ITEMS_PER_PAGE + 1))   # 10/20+1 = 1
+SKIP_IN_PAGE=$((EXISTING_COUNT % ITEMS_PER_PAGE))     # 10%20 = 10
+START_IDX=$((EXISTING_COUNT + 1))                      # 11
 ```
 
 **新参数说明**：
@@ -194,7 +206,8 @@ START_IDX=$((EXISTING_COUNT + 1))                           # 11
 # 已爬取10篇，每页20条，继续爬30篇
 # Skill 从状态文件读取: total_collected=10, current_page=1, items_per_page=20
 # Skill 计算: target_page=1, skip_in_page=10, start_idx=11
-bash scripts/cnki-crawl.sh cnki outputs "关键词" \
+cd {baseDir}/.claude/skills/cnki-search-agent-browser
+bash scripts/cnki-crawl.sh cnki {baseDir}/outputs "关键词" \
   --target-page 1 \
   --skip-in-page 10 \
   --count 30 \
@@ -216,7 +229,7 @@ npx agent-browser --session cnki-adv close 2>/dev/null || true
 
 **清理临时文件**：
 ```bash
-rm -f "outputs/.cnki_state.json" 2>/dev/null || true
+rm -f "{baseDir}/outputs/.cnki_state.json" 2>/dev/null || true
 ```
 
 ---

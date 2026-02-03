@@ -135,18 +135,16 @@ main_search() {
         return 1
     fi
     echo "✓ 浏览器已启动"
-    sleep 3
 
     # 异常检测：打开浏览器后检测验证码/弹窗
     if ERROR_TYPE=$(detect_exception "$BASE_OPTS"); then
         handle_exception "$SESSION" "$ERROR_TYPE" "$OUTPUT_DIR"
     fi
 
-    # 步骤1.5：在新tab中打开高级检索页面
+    # 步骤1.5：在新tab中打开高级检索页面（性能优化：删除不必要的 sleep）
     echo "📖 步骤2: 在新tab中打开高级检索页面..."
     npx agent-browser $BASE_OPTS tab new > /dev/null 2>&1
     npx agent-browser $BASE_OPTS open "https://kns.cnki.net/kns8s/AdvSearch?classid=YSTT4HG0" > /dev/null 2>&1
-    sleep 3
     echo "✓ 高级检索页面已打开"
 
     # 步骤3：获取页面元素ref
@@ -179,7 +177,6 @@ main_search() {
         echo "📖 步骤5: 设置时间范围..."
 
         # 重新获取快照（保持原始方案，适应网页动态变化）
-        sleep 1
         SNAPSHOT=$(npx agent-browser $BASE_OPTS snapshot -i)
 
         # 查找时间范围相关的输入框
@@ -208,7 +205,6 @@ main_search() {
     if [ -n "$IS_CORE" ]; then
         echo "📖 步骤6: 设置来源类别为核心期刊..."
 
-        sleep 1
         SNAPSHOT=$(npx agent-browser $BASE_OPTS snapshot -i)
 
         # 根据HTML结构，需要勾选以下复选框：
@@ -225,7 +221,6 @@ main_search() {
         if [ -n "$ALL_JOURNALS_REF" ]; then
             npx agent-browser $BASE_OPTS click "$ALL_JOURNALS_REF" > /dev/null 2>&1
             echo "✓ 已取消'全部期刊'勾选"
-            sleep 1
         fi
 
         # 重新获取快照
@@ -287,9 +282,8 @@ main_search() {
         echo "✓ 已勾选 $CORE_CHECKED 个核心期刊选项"
     fi
 
-    # 步骤7：点击检索按钮
+    # 步骤7：点击检索按钮（性能优化：删除不必要的 sleep）
     echo "📖 步骤7: 执行检索..."
-    sleep 1
     SNAPSHOT=$(npx agent-browser $BASE_OPTS snapshot -i)
     SEARCH_BUTTON_REF=$(echo "$SNAPSHOT" | grep 'button.*检索' | head -1 | sed -n 's/.*\[ref=\(.*\)\].*/\1/p')
 

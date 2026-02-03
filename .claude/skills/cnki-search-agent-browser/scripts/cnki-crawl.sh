@@ -96,30 +96,17 @@ else
     echo "📌 从第 $START_IDX 篇继续爬取（已有 $EXISTING_COUNT 篇）"
 fi
 
-# 步骤1：自动设置每页显示50条（使用智能等待 + 兜底机制）
-echo "⚙️  正在设置每页显示50条..."
-# 先检查当前是否已经是50
-PER_PAGE=$(npx agent-browser $BASE_OPTS eval 'document.querySelector("label.on")?.textContent.trim() || ""' 2>/dev/null || echo "")
-if [ "$PER_PAGE" = "50" ]; then
-    echo "✓ 已是每页50条"
-else
-    # 点击 value="50" 的 radio
-    npx agent-browser $BASE_OPTS eval 'document.querySelector("input[value=\\"50\\"]")?.click()' > /dev/null 2>&1 || true
-
-    # 等待设置生效（带兜底机制）
-    # 方法1：智能等待（首选）
-    if ! npx agent-browser $BASE_OPTS wait --fn 'document.querySelector("label.on")?.textContent.trim() === "50"' --timeout 3000 2>/dev/null; then
-        # 方法2：兜底 - 使用固定等待
-        sleep 2
-    fi
-
-    # 验证是否设置成功
+# 步骤1：设置每页显示50条（性能优化：简化流程）
+echo "⚙️  尝试设置每页显示50条..."
+PER_PAGE=""
+if npx agent-browser $BASE_OPTS eval 'document.querySelector("input[value=\\"50\\"]")?.click()' 2>/dev/null; then
+    sleep 1  # 简单等待，不做验证
     PER_PAGE=$(npx agent-browser $BASE_OPTS eval 'document.querySelector("label.on")?.textContent.trim() || ""' 2>/dev/null || echo "")
-    if [ "$PER_PAGE" = "50" ]; then
-        echo "✓ 已设置每页50条"
-    else
-        echo "⚠️  设置失败，使用默认设置"
-    fi
+fi
+if [ "$PER_PAGE" = "50" ]; then
+    echo "✓ 已设置每页50条"
+else
+    echo "⚠️  使用默认设置（每页20条）"
 fi
 
 # 步骤2：跳转到目标页面（如果指定了 target-page）
@@ -137,26 +124,15 @@ if [ -n "$TARGET_PAGE" ]; then
         for ((i=1; i<=PAGES_TO_JUMP; i++)); do
             echo "   正在跳转到第 $((CURRENT_PAGE + i)) 页..."
 
-            # 获取下一页按钮ref
-            NEXT_PAGE_REF=$(npx agent-browser $BASE_OPTS snapshot -i | grep "下一页" | head -1 | sed -n 's/.*\[ref=\(.*\)\].*/\1/p')
-
-            if [ -z "$NEXT_PAGE_REF" ]; then
+            # 使用 find text 直接点击下一页（替代 snapshot，性能优化）
+            if ! npx agent-browser $BASE_OPTS find text "下一页" click > /dev/null 2>&1; then
                 echo "   ⚠️  未找到下一页按钮，无法继续跳转"
                 break
             fi
 
-            # 点击下一页
-            npx agent-browser $BASE_OPTS click "$NEXT_PAGE_REF" > /dev/null 2>&1 || true
-
             # 等待页面加载
             if ! npx agent-browser $BASE_OPTS wait --fn 'document.querySelector("tbody tr")?.textContent?.trim() !== ""' --timeout 5000 2>/dev/null; then
                 sleep 2
-            fi
-
-            # 异常检测
-            if ERROR_TYPE=$(detect_exception "$BASE_OPTS"); then
-                echo "   ⚠️  跳转时检测到异常: $ERROR_TYPE"
-                handle_exception "$SESSION" "$ERROR_TYPE" "$OUTPUT_DIR"
             fi
         done
 
@@ -172,12 +148,6 @@ PAGE_NUM=1
 
 while [ $TOTAL_COLLECTED -lt $TARGET_COUNT ]; do
     echo "📄 正在爬取第 $PAGE_NUM 页..."
-
-    # 异常检测：每页爬取前检测验证码/弹窗
-    if ERROR_TYPE=$(detect_exception "$BASE_OPTS"); then
-        echo "⚠️  在第 $PAGE_NUM 页爬取前检测到异常: $ERROR_TYPE"
-        handle_exception "$SESSION" "$ERROR_TYPE" "$OUTPUT_DIR"
-    fi
 
     # 提取当前页结果
     PAGE_DATA=$(npx agent-browser $BASE_OPTS eval '[...document.querySelectorAll(`tbody tr`)].map((r,i)=>({title:r.querySelector(`.name a`)?.textContent?.trim(),author:[...r.querySelectorAll(`td:nth-child(3) a`)].map(a=>a.textContent.trim()).join(`; `),source:r.querySelector(`td:nth-child(4) a`)?.textContent?.trim(),date:r.querySelector(`td:nth-child(5)`)?.textContent?.trim()})).filter(x=>x.title)' || echo '[]')
@@ -231,17 +201,12 @@ while [ $TOTAL_COLLECTED -lt $TARGET_COUNT ]; do
         break
     fi
 
-    # 步骤4：自动获取下一页按钮ref
-    NEXT_PAGE_REF=$(npx agent-browser $BASE_OPTS snapshot -i | grep "下一页" | head -1 | sed -n 's/.*\[ref=\(.*\)\].*/\1/p')
-
-    if [ -z "$NEXT_PAGE_REF" ]; then
+    # 步骤4：点击下一页（使用 find text 直接点击，性能优化）
+    echo "   正在翻页..."
+    if ! npx agent-browser $BASE_OPTS find text "下一页" click > /dev/null 2>&1; then
         echo "⚠️  未找到下一页按钮，可能已到最后一页"
         break
     fi
-
-    # 点击下一页
-    echo "   正在翻页..."
-    npx agent-browser $BASE_OPTS click "$NEXT_PAGE_REF" > /dev/null 2>&1 || true
 
     # 使用智能等待，检测新内容是否加载完成（带兜底机制）
     # 方法1：智能等待（首选）

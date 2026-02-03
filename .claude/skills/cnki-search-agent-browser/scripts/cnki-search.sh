@@ -48,9 +48,8 @@ main_search() {
         handle_exception "$SESSION" "$ERROR_TYPE" "$OUTPUT_DIR"
     fi
 
-    # 步骤2：获取元素ref
+    # 步骤2：获取元素ref（性能优化：删除不必要的 sleep）
     echo "📖 步骤2: 获取页面元素..."
-    sleep 2
     SNAPSHOT=$(npx agent-browser --session $SESSION --headed snapshot -i)
     SEARCH_REF=$(echo "$SNAPSHOT" | grep 'textbox.*中文文献' | head -1 | sed -n 's/.*\[ref=\(.*\)\].*/\1/p')
     BUTTON_REF=$(echo "$SNAPSHOT" | grep 'button.*检索' | head -1 | sed -n 's/.*\[ref=\(.*\)\].*/\1/p')
