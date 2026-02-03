@@ -312,6 +312,8 @@ npx agent-browser --session cnki --headed errors
 | 发表时间 | `td:nth-child(5)` | 发表日期 |
 | 下载次数 | `.download` | 下载统计 |
 
+> **注**：这些选择器可用于 JavaScript `eval` 命令中提取结果数据。
+
 ## URL 模式
 
 | 页面类型 | URL 模式 |

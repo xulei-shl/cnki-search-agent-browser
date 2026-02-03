@@ -6,11 +6,67 @@ allowed-tools: "Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion, Task"
 
 # CNKI 技能主流程
 
+```mermaid
+flowchart TD
+    Start([用户触发检索意图]) --> Detect{检测用户表达}
+    Detect -->|含关键词| ParamStep[步骤2: 询问检索参数]
+    Detect -->|仅触发意图| TypeStep[步骤1: 选择检索类型]
+
+    TypeStep -->|AskUserQuestion| Simple{简单检索?}
+    Simple -->|是| ParamStep
+    Simple -->|否| ParamStep
+
+    ParamStep --> Confirm[步骤3: 展示检索条件确认]
+    Confirm --> Execute[步骤4: 调用脚本执行]
+
+    Execute --> Script{选择脚本}
+    Script -->|简单检索| SearchScript[cnki-search.sh]
+    Script -->|高级检索| AdvSearchScript[cnki-adv-search.sh]
+
+    SearchScript --> Result[展示爬取结果]
+    AdvSearchScript --> Result
+
+    Result --> HasRemaining{有剩余文献?}
+    HasRemaining -->|是| Continue{继续爬取?}
+    HasRemaining -->|否| EndStep[步骤6: 关闭会话结束]
+
+    Continue -->|是| CrawlStep[调用 cnki-crawl.sh 延续爬取]
+    CrawlStep --> Result
+
+    Continue -->|否| EndStep
+    EndStep --> End([任务结束])
+
+    style Start fill:#e1f5e1
+    style End fill:#ffe1e1
+    style TypeStep fill:#e1e5ff
+    style Execute fill:#fff5e1
+    style EndStep fill:#ffe1e1
+```
+
 ## 技能入口：交互式检索
 
-当用户请求检索 CNKI 论文时，按以下流程处理：
+**触发条件**：当用户表达以下意图时，应使用此技能：
+
+| 用户表达示例 | 触发类型 | 已含信息 |
+|--------------|----------|----------|
+| "检索 CNKI 论文" | 直接指令 | - |
+| "在知网上搜索人工智能" | 平台指定 | 关键词 |
+| "查找关于机器学习的文献" | 间接意图 | 关键词 |
+| "CNKI上有哪些关于深度学习的研究" | 询问式 | 关键词 |
+| "帮我爬取知网数据" | 数据获取 | - |
+| "搜索核心期刊关于大模型的论文" | 具体需求 | 关键词+筛选条件 |
+
+**关键词识别**：CNKI、知网、论文检索、文献搜索、学术搜索、核心期刊、SCI/SSCI
+
+**触发处理逻辑**：
+- 如果用户表达中已包含检索关键词 → 直接进入步骤2询问其他参数
+- 如果用户表达中只含触发意图 → 从步骤1开始完整流程
+
+当检测到上述意图时，按以下流程处理：
 
 ### 步骤1：交互式选择检索类型
+
+**执行逻辑**：提供两种检索模式让用户选择，简单检索适合快速查询，高级检索支持精确筛选。
 
 **使用 AskUserQuestion 让用户选择检索类型**（唯一交互）：
 
@@ -19,18 +75,34 @@ allowed-tools: "Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion, Task"
   "question": "请选择检索类型",
   "header": "检索类型",
   "options": [
-    {"label": "简单检索", "description": "快速检索，无时间/期刊限制"},
+    {"label": "简单检索", "description": "快速检索，无时间/核心期刊限制"},
     {"label": "高级检索", "description": "支持时间范围、核心期刊筛选"}
   ],
   "multiSelect": false
 }
 ```
 
+---
+
 ### 步骤2：询问检索参数
+
+**执行逻辑**：一次性收集所有必要参数，避免多次交互打断用户。根据检索类型只询问相关参数。
+
 **不要使用AskUserQuestion工具，直接一次性询问所有参数**：
-检索关键词、时间范围、来源类别（是否核心期刊）、爬取数量
+- 检索关键词
+- 时间范围（仅高级检索）
+- 来源类别/是否核心期刊（仅高级检索）
+- 爬取数量
+
+**异常处理**：用户输入格式问题时，给出明确示例并重新询问。
+
+---
 
 ### 步骤3：展示检索条件并执行
+
+**执行逻辑**：在执行前让用户确认所有参数，避免因误解导致需要重新检索。确认后立即开始执行，不需要额外等待用户输入。
+
+**输出格式**：
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -46,9 +118,25 @@ allowed-tools: "Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion, Task"
 正在开始检索...
 ```
 
+---
+
 ### 步骤4：调用脚本并展示结果
 
-根据检索条件调用对应脚本，完成后展示结果，并使用AskUserQuestion询问是否继续爬取剩余文献：
+**执行逻辑**：根据检索条件调用对应的自动化脚本，脚本会处理浏览器交互、结果提取、翻页等复杂操作。脚本执行期间保持浏览器会话打开，便于后续延续爬取。
+
+**异常处理**：
+- 脚本执行失败 → [故障排查指南](reference/troubleshooting.md)
+- 参数错误 → [脚本文档](reference/scripts.md)
+- 元素定位问题 → [手动操作参考](reference/manual-operations.md)
+
+**脚本调用**（详细参数说明见 [脚本文档](reference/scripts.md)）：
+
+| 检索类型 | 脚本 | 基本用法 |
+|----------|------|----------|
+| 简单检索 | `cnki-search.sh` | `cnki-search.sh <keyword> [count] [output_dir]` |
+| 高级检索 | `cnki-adv-search.sh` | `cnki-adv-search.sh <keyword> [-s start] [-e end] [-c] [-n count]` |
+
+**完成后展示结果摘要**，
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -59,163 +147,95 @@ allowed-tools: "Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion, Task"
 本次爬取: XX 篇
 未爬取: XXXX 篇
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+如果还有未爬取的文献，执行步骤 5 询问用户是否继续爬取。否则，执行步骤 6 结束任务。
 
+### 步骤5：使用 AskUserQuestion 询问是否继续爬取剩余文献
+
+**如需继续爬取**：使用当前会话，继续调用 `cnki-crawl.sh` 脚本延续爬取。
+
+**职责分工**：
+- **Skill 层（大模型）**：理解用户意图、读取状态文件、计算目标参数
+- **脚本层（执行）**：跳转到指定页、跳过指定条数、提取数据、输出状态
+
+**状态文件格式** (`outputs/.cnki_state.json`)：
+```json
+{
+  "keyword": "关键词",
+  "total_collected": 10,
+  "current_page": 1,
+  "items_per_page": 20,
+  "timestamp": "2026-02-03T12:34:56Z"
+}
+```
+
+**参数计算逻辑**（从状态文件读取）：
+```bash
+# 1. 读取状态文件获取所有必要信息
+STATE=$(cat outputs/.cnki_state.json)
+EXISTING_COUNT=$(echo "$STATE" | jq -r '.total_collected')  # 10
+CURRENT_PAGE=$(echo "$STATE" | jq -r '.current_page')       # 1
+ITEMS_PER_PAGE=$(echo "$STATE" | jq -r '.items_per_page')   # 20
+
+# 2. 计算目标页码和页内跳过数
+TARGET_PAGE=$((EXISTING_COUNT / ITEMS_PER_PAGE + 1))        # 10/20+1 = 1
+SKIP_IN_PAGE=$((EXISTING_COUNT % ITEMS_PER_PAGE))          # 10%20 = 10
+START_IDX=$((EXISTING_COUNT + 1))                           # 11
+```
+
+**新参数说明**：
+- `--target-page`: 目标页码（从1开始），由 Skill 层从状态文件计算得出
+- `--skip-in-page`: 当前页内需要跳过的条数，由 Skill 层从状态文件计算得出
+- `--count`: 本次要爬取的数量
+- `--start-idx`: 输出文件的起始序号（= 已爬取数量 + 1）
+
+**调用示例**：
+```bash
+# 已爬取10篇，每页20条，继续爬30篇
+# Skill 从状态文件读取: total_collected=10, current_page=1, items_per_page=20
+# Skill 计算: target_page=1, skip_in_page=10, start_idx=11
+bash scripts/cnki-crawl.sh cnki outputs "关键词" \
+  --target-page 1 \
+  --skip-in-page 10 \
+  --count 30 \
+  --start-idx 11
 ```
 
 ---
 
-# CNKI 操作流程
+### 步骤6：结束任务
 
-## 核心约束
+**执行逻辑**：用户确认不再需要继续爬取后，关闭浏览器会话释放资源，清理临时状态文件，并简要总结此次爬取任务。
+
+**关闭会话**：
+```bash
+npx agent-browser --session cnki close 2>/dev/null || true
+
+npx agent-browser --session cnki-adv close 2>/dev/null || true
+```
+
+**清理临时文件**：
+```bash
+rm -f "outputs/.cnki_state.json" 2>/dev/null || true
+```
+
+---
+
+# CNKI 操作约束
+
+**关键约束**（违反会导致操作失败，详见 [完整约束说明](reference/constraints.md)）：
 
 1. **必须使用有头模式**：`--headed` 参数（无头模式会被检测）
 2. **必须使用 session**：`--session` 参数启动会话
-3. **元素 ref 动态变化**：每次操作前执行 `snapshot -i` 获取最新 ref
-4. **翻页/设置必须用 click**：不能用 `eval` 点击（eval 往往无效）
-5. **检索成功检测**：不要依赖 `wait --load networkidle`，改用 `sleep + snapshot + grep` 循环检测
-6. **高级检索反爬处理**：必须先打开主站，再在新tab中打开高级检索页面（使用 `tab new` + `open`）
-7. **高级检索元素定位**：snapshot 中 textbox 不显示 placeholder，需通过 `[nth=X]` 定位
+3. **元素 ref 动态变化**：可执行 `snapshot -i`（返回交互元素） 或 `snapshot`（返回全部元素） 获取最新 ref
 
-## 元素定位参考（高级检索页面）
+---
 
-从快照中获取元素时，参考以下 ref 顺序（可能动态变化）：
+## 参考文档
 
-```
-- textbox [ref=e18]           # 第1个输入框（主题）
-- textbox [ref=e19] [nth=1]   # 第2个输入框
-- textbox [ref=e22] [nth=2]   # 第3个输入框
-- textbox "起始年" [ref=e32]  # 起始年输入框
-- textbox "结束年" [ref=e33]  # 结束年输入框
-- checkbox "全部期刊" [ref=e35]    # 全部期刊
-- checkbox "WJCI" [ref=e36]        # WJCI
-- checkbox "SCI来源期刊" [ref=e37] # SCI
-- checkbox "EI来源期刊" [ref=e38]  # EI
-- checkbox "北大核心" [ref=e39]    # 北大核心
-- checkbox "CSSCI" [ref=e40]       # CSSCI
-- checkbox "CSCD" [ref=e41]        # CSCD
-- checkbox "AMI" [ref=e42]         # AMI
-- button "检索" [ref=e44]          # 检索按钮
-```
-
-**定位方法**：
-- 主题输入框：`grep 'textbox \[ref=' | head -1` 或使用 nth=0
-- 起始年：`grep 'textbox.*起始年'`
-- 结束年：`grep 'textbox.*结束年'`
-- 核心期刊：`grep 'checkbox.*"SCI"'` 等（注意用引号匹配 value）
-
-## 检索流程（底层操作参考）
-
-### 方式一：简单检索
-
-#### 步骤1：启动浏览器
-
-```bash
-npx agent-browser --session cnki --headed open https://chn.oversea.cnki.net
-```
-
-#### 步骤2：获取元素 ref
-
-```bash
-npx agent-browser --session cnki --headed snapshot -i
-```
-
-#### 步骤3：输入关键词并检索
-
-```bash
-npx agent-browser --session cnki --headed fill @e16 "关键词"
-npx agent-browser --session cnki --headed click @e17
-```
-
-#### 步骤4：检测检索是否成功
-
-```bash
-sleep 5
-RETRY=0
-while [ $RETRY -lt 3 ]; do
-    sleep 3
-    SNAPSHOT=$(npx agent-browser --session cnki --headed snapshot -i)
-    if echo "$SNAPSHOT" | grep -q "共找到\|总库"; then
-        echo "✓ 检索成功！"
-        break
-    fi
-    RETRY=$((RETRY + 1))
-    echo "   等待结果加载... ($RETRY/3)"
-done
-```
-
-### 方式二：高级检索
-
-**关键修复点**：
-1. 先打开主站，再使用 `tab new` + `open` 在新tab中打开高级检索页面
-2. 元素定位时注意 textbox 不显示 placeholder 属性
-3. 起始年/结束年输入框的 placeholder 在快照中可见
-4. 核心期刊需用 value 加引号匹配，如 `"SCI"`
-
-**高级检索脚本**：`cnki-adv-search.sh`
-
-## 自动化爬取脚本
-
-脚本路径：`{baseDir}/.claude/skills/cnki-search-agent-browser/scripts/`
-
-### 脚本参数
-
-#### cnki-search.sh（简单检索）
-
-```bash
-cnki-search.sh <keyword> [count] [output_dir]
-```
-
-| 参数 | 说明 | 必填 | 默认值 |
-|------|------|------|--------|
-| `keyword` | 检索关键词 | 是 | - |
-| `count` | 爬取数量 | 否 | 50 |
-| `output_dir` | 输出目录 | 否 | outputs |
-
-#### cnki-adv-search.sh（高级检索）
-
-```bash
-cnki-adv-search.sh <keyword> [options]
-```
-
-| 参数 | 说明 | 必填 | 默认值 |
-|------|------|------|--------|
-| `keyword` | 检索关键词 | 是 | - |
-| `-s, --start` | 起始年份 | 否 | 最近3年 |
-| `-e, --end` | 结束年份 | 否 | 最近3年 |
-| `-c, --core` | 核心期刊标识 | 否 | 是 |
-| `-n, --count` | 爬取数量 | 否 | 50 |
-| `-o, --output` | 输出目录 | 否 | outputs |
-
-**使用示例**：
-```bash
-# 简单检索（默认50篇）
-bash scripts/cnki-search.sh "人工智能"
-
-# 高级检索（默认最近3年核心期刊，50篇）
-bash scripts/cnki-adv-search.sh "人工智能"
-
-# 高级检索 - 自定义参数
-bash scripts/cnki-adv-search.sh "人工智能" -s 2020 -e 2024 -c -n 50
-```
-
-### 依赖
-
-- `jq`：JSON 处理工具
-  - Windows (Git Bash): `scoop install jq` 或 `choco install jq`
-
-## 错误排查
-
-| 错误 | 原因 | 解决方法 |
-|------|------|----------|
-| 元素定位失败 | 页面未完全加载 | 增加等待时间，检查快照输出 |
-| 无法找到输入框 | textbox 无 placeholder 属性 | 使用 nth 索引或 grep 第一个 textbox |
-| 核心期刊未勾选 | grep 匹配不准确 | 使用 `"value"` 带引号匹配 |
-
-## CSS 选择器参考
-
-| 数据类型 | 选择器 |
-|----------|--------|
-| 论文标题 | `.name a` |
-| 作者 | `td:nth-child(3)` |
-| 来源 | `td:nth-child(4)` |
-| 发表时间 | `td:nth-child(5)` |
+| 文档 | 说明 |
+|------|------|
+| [操作约束详解](reference/constraints.md) | CNKI 操作的完整约束列表和原因说明 |
+| [脚本使用文档](reference/scripts.md) | 所有脚本的参数说明和使用示例 |
+| [故障排查指南](reference/troubleshooting.md) | 常见错误及解决方案 |
+| [手动操作参考](reference/manual-operations.md) | 底层操作命令、翻页、结果提取、调试技巧 |
